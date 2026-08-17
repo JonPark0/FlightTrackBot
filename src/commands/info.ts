@@ -16,11 +16,26 @@ export async function handleInfo(interaction: ChatInputCommandInteraction): Prom
 
   await interaction.deferReply();
 
-  const results = await lookupAircraft(identified.type, identified.value);
+  // For callsign-type input, resolve an IATA flight number (e.g. OZ222) to
+  // its ICAO callsign (AAR222) *before* querying ADS-B — transponders only
+  // ever broadcast the ICAO form, so querying with the raw IATA input
+  // would silently return nothing even for an airborne flight. If the
+  // input is already an ICAO callsign this just confirms it and also
+  // gives us the route for display.
+  let route = null as Awaited<ReturnType<typeof lookupFlightRoute>>;
+  let adsbQueryValue = identified.value;
+  if (identified.type === "callsign") {
+    route = await lookupFlightRoute(identified.value);
+    adsbQueryValue = route?.callsign_icao ?? identified.value;
+  }
+
+  const results = await lookupAircraft(identified.type, adsbQueryValue);
   const aircraft = results[0] ?? null;
 
-  const callsignForRoute = identified.type === "callsign" ? identified.value : aircraft?.flight ?? null;
-  const route = callsignForRoute ? await lookupFlightRoute(callsignForRoute) : null;
+  if (!route) {
+    const callsignForRoute = identified.type === "callsign" ? adsbQueryValue : aircraft?.flight ?? null;
+    route = callsignForRoute ? await lookupFlightRoute(callsignForRoute) : null;
+  }
 
   const acKey = aircraft?.hex ?? aircraft?.registration ?? (identified.type === "registration" ? identified.value : null);
   const aircraftInfo = acKey ? await lookupAircraftInfo(acKey) : null;
