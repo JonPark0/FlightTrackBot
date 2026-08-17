@@ -3,6 +3,7 @@ import { logger } from "../logger";
 import { endTracking, findTrackingByQuery } from "../db/trackings";
 import { fetchThread, postStateNotice, archiveThread } from "../discord/threads";
 import { flightLabel, replyError } from "./shared";
+import { safeReply } from "../discord/safeReply";
 
 export async function handleUntrack(interaction: ChatInputCommandInteraction): Promise<void> {
   const guildId = interaction.guildId;
@@ -28,6 +29,6 @@ export async function handleUntrack(interaction: ChatInputCommandInteraction): P
     }
   }
 
-  await interaction.reply(`✅ **${flightLabel(tracking)}** 추적을 종료했습니다.`);
+  await safeReply(interaction, `✅ **${flightLabel(tracking)}** 추적을 종료했습니다.`);
   logger.info({ trackingId: tracking.id, by: interaction.user.id }, "tracking ended by user");
 }

@@ -3,6 +3,7 @@ import { logger } from "../logger";
 import { findTrackingByQuery, setChannelAndThread } from "../db/trackings";
 import { createFlightThread, fetchThread, postStateNotice, archiveThread } from "../discord/threads";
 import { botHasChannelPermissions, flightLabel, replyError, threadLink } from "./shared";
+import { safeEditReply } from "../discord/safeReply";
 
 /**
  * Discord threads cannot be moved between channels via the API, so "move"
@@ -47,7 +48,7 @@ export async function handleMove(interaction: ChatInputCommandInteraction): Prom
     newThread = await createFlightThread(channel, flightLabel(tracking));
   } catch (err) {
     logger.error({ err }, "failed to create thread while moving tracking");
-    await interaction.editReply("⚠️ 새 스레드 생성에 실패했습니다.");
+    await safeEditReply(interaction, "⚠️ 새 스레드 생성에 실패했습니다.");
     return;
   }
 
@@ -61,5 +62,5 @@ export async function handleMove(interaction: ChatInputCommandInteraction): Prom
   }
   await newThread.send(`\u{2705} **${flightLabel(tracking)}** 추적이 이 스레드로 이동했습니다.`);
 
-  await interaction.editReply(`✅ 추적을 ${channel} 로 이동했습니다: ${newThread}`);
+  await safeEditReply(interaction, `✅ 추적을 ${channel} 로 이동했습니다: ${newThread}`);
 }

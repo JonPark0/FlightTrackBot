@@ -7,6 +7,7 @@ import { handleInfo } from "./info";
 import { handleInterval } from "./interval";
 import { handleMove } from "./move";
 import { handleMode } from "./mode";
+import { safeEditReply, safeReply } from "../discord/safeReply";
 
 const TYPE_CHOICES = [
   { name: "콜사인/편명 (자동, IATA 가능)", value: "callsign" },
@@ -99,15 +100,15 @@ export async function dispatchFlightCommand(interaction: ChatInputCommandInterac
       case "mode":
         return await handleMode(interaction);
       default:
-        await interaction.reply({ content: "알 수 없는 명령어입니다.", flags: MessageFlags.Ephemeral });
+        await safeReply(interaction, { content: "알 수 없는 명령어입니다.", flags: MessageFlags.Ephemeral });
     }
   } catch (err) {
     logger.error({ err, sub }, "command handler threw");
     const content = "⚠️ 명령어 처리 중 오류가 발생했습니다.";
     if (interaction.deferred || interaction.replied) {
-      await interaction.editReply({ content }).catch(() => undefined);
+      await safeEditReply(interaction, { content }).catch(() => undefined);
     } else {
-      await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
+      await safeReply(interaction, { content, flags: MessageFlags.Ephemeral }).catch(() => undefined);
     }
   }
 }

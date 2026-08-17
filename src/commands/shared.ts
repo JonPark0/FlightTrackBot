@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, MessageFlags, PermissionFlagsBits, TextChannel } from "discord.js";
 import { config } from "../config";
 import { Tracking } from "../db/types";
+import { safeEditReply, safeReply } from "../discord/safeReply";
 
 export const REQUIRED_BOT_PERMISSIONS = [
   PermissionFlagsBits.ViewChannel,
@@ -40,9 +41,9 @@ export async function replyError(interaction: ChatInputCommandInteraction, messa
   if (interaction.deferred || interaction.replied) {
     // editReply cannot retroactively add the ephemeral flag — only relevant
     // if a call site starts calling this after a public defer/reply.
-    await interaction.editReply({ content });
+    await safeEditReply(interaction, { content });
   } else {
-    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+    await safeReply(interaction, { content, flags: MessageFlags.Ephemeral });
   }
 }
 

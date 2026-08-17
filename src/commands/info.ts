@@ -6,6 +6,7 @@ import { renderFlightMap, withAttribution, MarkerStyle } from "../map/render";
 import { buildFlightEmbed } from "../embeds/flightEmbed";
 import { Tracking, QueryType } from "../db/types";
 import { resolveDisplayPosition } from "../service/positionEstimate";
+import { safeEditReply } from "../discord/safeReply";
 
 /** One-off lookup, no tracking registered. Reuses the same embed builder. */
 export async function handleInfo(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -101,12 +102,12 @@ export async function handleInfo(interaction: ChatInputCommandInteraction): Prom
 
   const embed = buildFlightEmbed({ tracking: pseudoTracking, aircraft, route, aircraftInfo, mapAttachmentName, displayPosition });
   if (!aircraft) {
-    await interaction.editReply({
+    await safeEditReply(interaction, {
       content: "현재 이 항공편의 실시간 신호를 찾지 못했습니다 (운항 전/후이거나 커버리지 밖일 수 있습니다).",
       embeds: [embed],
       files,
     });
     return;
   }
-  await interaction.editReply({ embeds: [embed], files });
+  await safeEditReply(interaction, { embeds: [embed], files });
 }

@@ -8,6 +8,7 @@ import {
   ThreadAutoArchiveDuration,
 } from "discord.js";
 import { logger } from "../logger";
+import { isTransientSocketError } from "./transientError";
 
 /** Creates a public thread under a text channel for a newly tracked flight. */
 export async function createFlightThread(
@@ -59,7 +60,13 @@ export async function postNewMessage(
   if (thread.archived) {
     await thread.setArchived(false, "Resuming flight update posts");
   }
-  return thread.send({ embeds: payload.embeds, files: payload.files });
+  try {
+    return await thread.send({ embeds: payload.embeds, files: payload.files });
+  } catch (err) {
+    if (!isTransientSocketError(err)) throw err;
+    logger.warn({ err }, "thread.send hit a transient socket error, retrying once");
+    return await thread.send({ embeds: payload.embeds, files: payload.files });
+  }
 }
 
 /**
@@ -74,7 +81,13 @@ export async function editLiveMessage(
 ): Promise<Message | null> {
   try {
     const message = await thread.messages.fetch(messageId);
-    return await message.edit({ embeds: payload.embeds, files: payload.files, attachments: [] });
+    try {
+      return await message.edit({ embeds: payload.embeds, files: payload.files, attachments: [] });
+    } catch (err) {
+      if (!isTransientSocketError(err)) throw err;
+      logger.warn({ err, messageId }, "message.edit hit a transient socket error, retrying once");
+      return await message.edit({ embeds: payload.embeds, files: payload.files, attachments: [] });
+    }
   } catch (err) {
     logger.warn({ err, messageId }, "failed to edit live message, will post a new one");
     return null;

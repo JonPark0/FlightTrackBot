@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, EmbedBuilder, MessageFlags } from "discord
 import { listTrackings } from "../db/trackings";
 import { flightLabel, threadLink } from "./shared";
 import { replyError } from "./shared";
+import { safeReply } from "../discord/safeReply";
 
 const STATE_EMOJI: Record<string, string> = {
   pending: "\u{1F7E1}",
@@ -19,7 +20,7 @@ export async function handleList(interaction: ChatInputCommandInteraction): Prom
 
   const trackings = await listTrackings(guildId);
   if (trackings.length === 0) {
-    await interaction.reply({ content: "현재 이 서버에서 추적 중인 항공편이 없습니다.", flags: MessageFlags.Ephemeral });
+    await safeReply(interaction, { content: "현재 이 서버에서 추적 중인 항공편이 없습니다.", flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -36,5 +37,5 @@ export async function handleList(interaction: ChatInputCommandInteraction): Prom
         .join("\n\n"),
     );
 
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  await safeReply(interaction, { embeds: [embed], flags: MessageFlags.Ephemeral });
 }

@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction } from "discord.js";
 import { config } from "../config";
 import { findTrackingByQuery, setInterval_ } from "../db/trackings";
 import { flightLabel, isValidInterval, replyError } from "./shared";
+import { safeReply } from "../discord/safeReply";
 
 export async function handleInterval(interaction: ChatInputCommandInteraction): Promise<void> {
   const guildId = interaction.guildId;
@@ -28,5 +29,5 @@ export async function handleInterval(interaction: ChatInputCommandInteraction): 
   }
 
   await setInterval_(tracking.id, seconds);
-  await interaction.reply(`✅ **${flightLabel(tracking)}**의 갱신 주기를 ${seconds}초로 변경했습니다.`);
+  await safeReply(interaction, `✅ **${flightLabel(tracking)}**의 갱신 주기를 ${seconds}초로 변경했습니다.`);
 }

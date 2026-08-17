@@ -8,6 +8,7 @@ import { QueryType } from "../db/types";
 import { createFlightThread } from "../discord/threads";
 import { processTrackingTick } from "../service/flightUpdate";
 import { botHasChannelPermissions, clampInterval, flightLabel, isValidInterval, replyError, threadLink } from "./shared";
+import { safeEditReply } from "../discord/safeReply";
 
 export async function handleTrack(interaction: ChatInputCommandInteraction): Promise<void> {
   const guildId = interaction.guildId;
@@ -89,13 +90,14 @@ export async function handleTrack(interaction: ChatInputCommandInteraction): Pro
     thread = await createFlightThread(channel, resolvedCallsign ?? identified.value);
   } catch (err) {
     logger.error({ err }, "failed to create thread for tracking");
-    await interaction.editReply("⚠️ 스레드 생성에 실패했습니다. 봇 권한을 확인해주세요.");
+    await safeEditReply(interaction, "⚠️ 스레드 생성에 실패했습니다. 봇 권한을 확인해주세요.");
     return;
   }
   await setThread(tracking.id, thread.id);
   tracking.thread_id = thread.id;
 
-  await interaction.editReply(
+  await safeEditReply(
+    interaction,
     `✅ **${flightLabel(tracking)}** 추적을 시작했습니다. 업데이트는 ${thread} 에서 ${intervalSeconds}초마다 게시됩니다.`,
   );
 

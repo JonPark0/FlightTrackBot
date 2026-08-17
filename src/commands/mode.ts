@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction } from "discord.js";
 import { findTrackingByQuery, setDisplayMode } from "../db/trackings";
 import { DisplayMode } from "../db/types";
 import { flightLabel, replyError } from "./shared";
+import { safeReply } from "../discord/safeReply";
 
 export async function handleMode(interaction: ChatInputCommandInteraction): Promise<void> {
   const guildId = interaction.guildId;
@@ -21,5 +22,5 @@ export async function handleMode(interaction: ChatInputCommandInteraction): Prom
 
   await setDisplayMode(tracking.id, mode);
   const desc = mode === "live" ? "실시간 메시지 편집(live)" : "매번 새 메시지(log)";
-  await interaction.reply(`✅ **${flightLabel(tracking)}**의 게시 방식을 ${desc}으로 변경했습니다.`);
+  await safeReply(interaction, `✅ **${flightLabel(tracking)}**의 게시 방식을 ${desc}으로 변경했습니다.`);
 }
