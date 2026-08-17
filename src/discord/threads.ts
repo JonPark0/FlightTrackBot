@@ -8,7 +8,7 @@ import {
   ThreadAutoArchiveDuration,
 } from "discord.js";
 import { logger } from "../logger";
-import { isTransientSocketError } from "./transientError";
+import { withSocketErrorRetry } from "./transientError";
 
 /** Creates a public thread under a text channel for a newly tracked flight. */
 export async function createFlightThread(
@@ -60,13 +60,9 @@ export async function postNewMessage(
   if (thread.archived) {
     await thread.setArchived(false, "Resuming flight update posts");
   }
-  try {
-    return await thread.send({ embeds: payload.embeds, files: payload.files });
-  } catch (err) {
-    if (!isTransientSocketError(err)) throw err;
-    logger.warn({ err }, "thread.send hit a transient socket error, retrying once");
-    return await thread.send({ embeds: payload.embeds, files: payload.files });
-  }
+  return withSocketErrorRetry("thread.send", () =>
+    thread.send({ embeds: payload.embeds, files: payload.files }),
+  );
 }
 
 /**
@@ -81,13 +77,9 @@ export async function editLiveMessage(
 ): Promise<Message | null> {
   try {
     const message = await thread.messages.fetch(messageId);
-    try {
-      return await message.edit({ embeds: payload.embeds, files: payload.files, attachments: [] });
-    } catch (err) {
-      if (!isTransientSocketError(err)) throw err;
-      logger.warn({ err, messageId }, "message.edit hit a transient socket error, retrying once");
-      return await message.edit({ embeds: payload.embeds, files: payload.files, attachments: [] });
-    }
+    return await withSocketErrorRetry("message.edit", () =>
+      message.edit({ embeds: payload.embeds, files: payload.files, attachments: [] }),
+    );
   } catch (err) {
     logger.warn({ err, messageId }, "failed to edit live message, will post a new one");
     return null;
@@ -99,7 +91,7 @@ export async function postStateNotice(thread: AnyThreadChannel, text: string): P
     if (thread.archived) {
       await thread.setArchived(false, "Posting state change notice");
     }
-    await thread.send({ content: text });
+    await withSocketErrorRetry("postStateNotice", () => thread.send({ content: text }));
   } catch (err) {
     logger.warn({ err }, "failed to post state notice");
   }
