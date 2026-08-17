@@ -39,3 +39,18 @@ export async function recentPositions(trackingId: number, limit = MAX_TRACK_POIN
   );
   return rows.reverse();
 }
+
+/**
+ * Most recent position row that actually has coordinates — used as the
+ * dead-reckoning anchor when the current tick has no live ADS-B fix.
+ */
+export async function latestPosition(trackingId: number): Promise<PositionRow | null> {
+  const { rows } = await pool.query<PositionRow>(
+    `SELECT * FROM positions
+     WHERE tracking_id = $1 AND lat IS NOT NULL AND lon IS NOT NULL
+     ORDER BY observed_at DESC
+     LIMIT 1`,
+    [trackingId],
+  );
+  return rows[0] ?? null;
+}

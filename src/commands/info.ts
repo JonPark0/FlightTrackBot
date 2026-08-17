@@ -2,9 +2,10 @@ import { AttachmentBuilder, ChatInputCommandInteraction } from "discord.js";
 import { identifyQuery } from "../util/identifyQuery";
 import { lookupAircraft } from "../adsb/client";
 import { lookupFlightRoute, lookupAircraftInfo } from "../meta/adsbdb";
-import { renderFlightMap, withAttribution } from "../map/render";
+import { renderFlightMap, withAttribution, MarkerStyle } from "../map/render";
 import { buildFlightEmbed } from "../embeds/flightEmbed";
 import { Tracking, QueryType } from "../db/types";
+import { resolveDisplayPosition } from "../service/positionEstimate";
 
 /** One-off lookup, no tracking registered. Reuses the same embed builder. */
 export async function handleInfo(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -61,19 +62,34 @@ export async function handleInfo(interaction: ChatInputCommandInteraction): Prom
     updated_at: new Date().toISOString(),
   };
 
+  // No tracking history exists for a one-off /flight info query, so the
+  // only fallback resolveDisplayPosition can offer without a live fix is
+  // the departure airport (the "pending" case) — there's no last-known fix
+  // to dead-reckon from, and no persisted state to say it already landed.
+  const displayPosition = resolveDisplayPosition({
+    aircraft,
+    lastPosition: null,
+    route,
+    state: pseudoTracking.state,
+  });
+
   const files: AttachmentBuilder[] = [];
   let mapAttachmentName: string | null = null;
-  if (aircraft?.lat !== null && aircraft?.lon !== null && aircraft) {
+  if (displayPosition) {
     try {
+      const markerStyle: MarkerStyle = displayPosition.kind === "live" ? "live" : "airport";
+      const fixedZoom = displayPosition.kind === "live" ? undefined : 11;
       const rendered = await withAttribution(
         await renderFlightMap({
-          lat: aircraft.lat as number,
-          lon: aircraft.lon as number,
-          trackDeg: aircraft.trackDeg,
-          onGround: aircraft.onGround,
-          altFt: aircraft.altFt,
-          gsKt: aircraft.gsKt,
+          lat: displayPosition.lat,
+          lon: displayPosition.lon,
+          trackDeg: displayPosition.headingDeg,
+          onGround: aircraft?.onGround ?? false,
+          altFt: aircraft?.altFt ?? null,
+          gsKt: aircraft?.gsKt ?? null,
           trail: [],
+          markerStyle,
+          fixedZoom,
         }),
       );
       mapAttachmentName = `map-${Date.now()}.png`;
@@ -83,11 +99,12 @@ export async function handleInfo(interaction: ChatInputCommandInteraction): Prom
     }
   }
 
-  const embed = buildFlightEmbed({ tracking: pseudoTracking, aircraft, route, aircraftInfo, mapAttachmentName });
+  const embed = buildFlightEmbed({ tracking: pseudoTracking, aircraft, route, aircraftInfo, mapAttachmentName, displayPosition });
   if (!aircraft) {
     await interaction.editReply({
       content: "현재 이 항공편의 실시간 신호를 찾지 못했습니다 (운항 전/후이거나 커버리지 밖일 수 있습니다).",
       embeds: [embed],
+      files,
     });
     return;
   }

@@ -4,11 +4,12 @@ import { Tracking, TrackingState } from "../db/types";
 import { lookupAircraft } from "../adsb/client";
 import { NormalizedAircraft } from "../adsb/types";
 import { lookupFlightRoute, lookupAircraftInfo } from "../meta/adsbdb";
-import { insertPosition, recentPositions } from "../db/positions";
+import { insertPosition, recentPositions, latestPosition } from "../db/positions";
 import { applyTickResult, setLiveMessageId, endTracking } from "../db/trackings";
-import { renderFlightMap, withAttribution } from "../map/render";
+import { renderFlightMap, withAttribution, MarkerStyle } from "../map/render";
 import { buildFlightEmbed } from "../embeds/flightEmbed";
 import { nextState } from "./stateMachine";
+import { resolveDisplayPosition, PositionEstimate } from "./positionEstimate";
 import { fetchThread, postNewMessage, editLiveMessage, postStateNotice, archiveThread } from "../discord/threads";
 
 const STATE_NOTICE: Partial<Record<TrackingState, string>> = {
@@ -33,6 +34,56 @@ async function resolveMeta(tracking: Tracking, aircraft: NormalizedAircraft | nu
   const aircraftInfo = acKey ? await lookupAircraftInfo(acKey) : null;
 
   return { route, aircraftInfo };
+}
+
+/**
+ * Renders the map image for whatever position we're displaying this tick,
+ * picking the marker style/zoom/trail appropriate to how that position was
+ * derived (real fix vs. dead-reckoned estimate vs. a stationary airport).
+ */
+async function renderMapForDisplayPosition(
+  trackingId: number,
+  position: PositionEstimate,
+  aircraft: NormalizedAircraft | null,
+): Promise<Buffer> {
+  if (position.kind === "live" && aircraft) {
+    const trail = (await recentPositions(trackingId))
+      .filter((p) => p.lat !== null && p.lon !== null)
+      .map((p) => ({ lat: p.lat as number, lon: p.lon as number }));
+    return renderFlightMap({
+      lat: aircraft.lat as number,
+      lon: aircraft.lon as number,
+      trackDeg: aircraft.trackDeg,
+      onGround: aircraft.onGround,
+      altFt: aircraft.altFt,
+      gsKt: aircraft.gsKt,
+      trail,
+    });
+  }
+
+  const markerStyle: MarkerStyle = position.kind === "enroute" ? "estimated" : "airport";
+  const trail =
+    position.kind === "enroute"
+      ? (await recentPositions(trackingId)).filter((p) => p.lat !== null && p.lon !== null).map((p) => ({ lat: p.lat as number, lon: p.lon as number }))
+      : [];
+  // Airport views use a fixed city-level zoom. The enroute estimate uses a
+  // deliberately wide zoom: the dead-reckoned position carries a growing
+  // uncertainty radius (hours since the last real fix × cruise speed can
+  // easily be 1000+ km), so a tight zoom would falsely suggest precision
+  // and often lands on a nearly featureless open-ocean tile anyway.
+  const fixedZoom = position.kind === "enroute" ? 4 : 11;
+
+  return renderFlightMap({
+    lat: position.lat,
+    lon: position.lon,
+    trackDeg: position.headingDeg,
+    onGround: false,
+    altFt: null,
+    gsKt: null,
+    trail,
+    markerStyle,
+    fixedZoom,
+  });
 }
 
 /**
@@ -86,24 +137,23 @@ export async function processTrackingTick(client: Client, tracking: Tracking): P
     return { route: null, aircraftInfo: null };
   });
 
+  // When there's no live fix this tick, fall back to a best-effort
+  // position: dead-reckon along the great circle toward the destination if
+  // we have a recent real fix and the flight is presumed still airborne,
+  // otherwise sit the marker at the departure/arrival airport.
+  const lastRealPosition = aircraft ? null : await latestPosition(tracking.id);
+  const displayPosition = resolveDisplayPosition({
+    aircraft,
+    lastPosition: lastRealPosition,
+    route,
+    state: decision.state,
+  });
+
   let mapAttachmentName: string | null = null;
   const files: { attachment: Buffer; name: string }[] = [];
-  if (aircraft?.lat !== null && aircraft?.lon !== null && aircraft) {
+  if (displayPosition) {
     try {
-      const trail = (await recentPositions(tracking.id))
-        .filter((p) => p.lat !== null && p.lon !== null)
-        .map((p) => ({ lat: p.lat as number, lon: p.lon as number }));
-      const rendered = await withAttribution(
-        await renderFlightMap({
-          lat: aircraft.lat as number,
-          lon: aircraft.lon as number,
-          trackDeg: aircraft.trackDeg,
-          onGround: aircraft.onGround,
-          altFt: aircraft.altFt,
-          gsKt: aircraft.gsKt,
-          trail,
-        }),
-      );
+      const rendered = await withAttribution(await renderMapForDisplayPosition(tracking.id, displayPosition, aircraft));
       mapAttachmentName = `map-${Date.now()}.png`;
       files.push({ attachment: rendered, name: mapAttachmentName });
     } catch (err) {
@@ -117,6 +167,7 @@ export async function processTrackingTick(client: Client, tracking: Tracking): P
     route,
     aircraftInfo,
     mapAttachmentName,
+    displayPosition,
   });
 
   try {

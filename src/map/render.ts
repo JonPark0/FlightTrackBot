@@ -11,6 +11,15 @@ export interface TrailPoint {
   lon: number;
 }
 
+/**
+ * "live": the real, current ADS-B fix (solid red heading arrow).
+ * "estimated": a dead-reckoned in-flight position (dashed amber arrow) —
+ *   see src/service/positionEstimate.ts.
+ * "airport": a stationary marker at a departure/arrival airport (blue pin,
+ *   not rotated) for flights that aren't currently airborne.
+ */
+export type MarkerStyle = "live" | "estimated" | "airport";
+
 export interface RenderFlightMapInput {
   lat: number;
   lon: number;
@@ -19,10 +28,14 @@ export interface RenderFlightMapInput {
   altFt: number | null;
   gsKt: number | null;
   trail: TrailPoint[];
+  markerStyle?: MarkerStyle;
+  /** Overrides the altitude-based zoom heuristic (used for airport/estimate views). */
+  fixedZoom?: number;
 }
 
 /** Picks a reasonable zoom level based on how "fast" the situation is. */
 function pickZoom(input: RenderFlightMapInput): number {
+  if (input.fixedZoom !== undefined) return input.fixedZoom;
   if (input.onGround) return 12;
   const alt = input.altFt ?? 0;
   if (alt < 5000) return 10;
@@ -107,6 +120,7 @@ export async function renderFlightMap(input: RenderFlightMapInput): Promise<Buff
     { x: aircraftPx.x - cropLeft, y: aircraftPx.y - cropTop },
     trailPx.map((p) => ({ x: p.x - cropLeft, y: p.y - cropTop })),
     input.trackDeg ?? 0,
+    input.markerStyle ?? "live",
   );
 
   return sharp(croppedBuffer)
@@ -121,6 +135,7 @@ function buildOverlaySvg(
   aircraft: { x: number; y: number },
   trail: { x: number; y: number }[],
   headingDeg: number,
+  markerStyle: MarkerStyle,
 ): string {
   const points = trail.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
   const polyline =
@@ -128,16 +143,36 @@ function buildOverlaySvg(
       ? `<polyline points="${points}" fill="none" stroke="#2563eb" stroke-width="3" stroke-opacity="0.75" stroke-linecap="round" stroke-linejoin="round" />`
       : "";
 
-  // Simple triangular aircraft marker, nose pointing "up" before rotation.
-  const marker = `
-    <g transform="translate(${aircraft.x},${aircraft.y}) rotate(${headingDeg})">
-      <polygon points="0,-11 8,10 0,5 -8,10" fill="#ef4444" stroke="#7f1d1d" stroke-width="1.5" />
-    </g>`;
+  const marker = buildMarkerSvg(aircraft, headingDeg, markerStyle);
 
   return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     ${polyline}
     ${marker}
   </svg>`;
+}
+
+function buildMarkerSvg(pos: { x: number; y: number }, headingDeg: number, style: MarkerStyle): string {
+  if (style === "airport") {
+    // Stationary pin — no heading, since it marks a fixed airport location.
+    return `
+    <g transform="translate(${pos.x},${pos.y})">
+      <circle r="16" fill="#2563eb" fill-opacity="0.18" stroke="#2563eb" stroke-width="1.5" />
+      <circle r="7" fill="#2563eb" stroke="#1e3a8a" stroke-width="2" />
+    </g>`;
+  }
+  if (style === "estimated") {
+    // Same heading-arrow shape as "live", but dashed/translucent amber to
+    // visually mark it as a dead-reckoned guess rather than a real fix.
+    return `
+    <g transform="translate(${pos.x},${pos.y}) rotate(${headingDeg})">
+      <polygon points="0,-11 8,10 0,5 -8,10" fill="#f59e0b" fill-opacity="0.55" stroke="#b45309" stroke-width="1.5" stroke-dasharray="3,2" />
+    </g>`;
+  }
+  // "live": solid red heading arrow, nose pointing "up" before rotation.
+  return `
+    <g transform="translate(${pos.x},${pos.y}) rotate(${headingDeg})">
+      <polygon points="0,-11 8,10 0,5 -8,10" fill="#ef4444" stroke="#7f1d1d" stroke-width="1.5" />
+    </g>`;
 }
 
 /** Attribution strip appended below the map so the tile source is credited. */
