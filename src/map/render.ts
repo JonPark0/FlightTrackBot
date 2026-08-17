@@ -65,13 +65,24 @@ export async function renderFlightMap(input: RenderFlightMapInput): Promise<Buff
 
   const mosaicSize = GRID * TILE_SIZE;
 
-  const composites: OverlayOptions[] = [];
+  // Fetch all 9 mosaic tiles concurrently rather than one at a time — with a
+  // cold cache this was previously up to 9 sequential round-trips (each with
+  // its own up-to-10s timeout), easily pushing total command latency past
+  // Discord's ~15s per-request timeout and aborting the reply.
+  const tileJobs: Promise<{ dx: number; dy: number; tile: Buffer | null }>[] = [];
   for (let dx = 0; dx < GRID; dx++) {
     for (let dy = 0; dy < GRID; dy++) {
-      const tile = await fetchTile(zoom, originTileX + dx, originTileY + dy);
-      if (tile) {
-        composites.push({ input: tile, left: dx * TILE_SIZE, top: dy * TILE_SIZE });
-      }
+      tileJobs.push(
+        fetchTile(zoom, originTileX + dx, originTileY + dy).then((tile) => ({ dx, dy, tile })),
+      );
+    }
+  }
+  const tileResults = await Promise.all(tileJobs);
+
+  const composites: OverlayOptions[] = [];
+  for (const { dx, dy, tile } of tileResults) {
+    if (tile) {
+      composites.push({ input: tile, left: dx * TILE_SIZE, top: dy * TILE_SIZE });
     }
   }
 

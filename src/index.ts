@@ -21,6 +21,11 @@ async function main(): Promise<void> {
 
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
+    // Default REST timeout (15s) was getting hit by /flight info replies
+    // when map rendering ran long (e.g. cold tile cache); the tile-fetch
+    // parallelization in map/render.ts addresses the root cause, this is
+    // just a safety margin on top of that.
+    rest: { timeout: 30_000 },
   });
 
   client.once(Events.ClientReady, (c) => {
