@@ -1,3 +1,4 @@
+import "../net"; // no-op if index.ts already imported it; needed when this file runs standalone
 import { REST, Routes } from "discord.js";
 import { config } from "../config";
 import { logger } from "../logger";

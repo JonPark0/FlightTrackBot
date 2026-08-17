@@ -1,3 +1,4 @@
+import "./net"; // must run before any networking code (see file for why)
 import { Client, Events, GatewayIntentBits } from "discord.js";
 import { config } from "./config";
 import { logger } from "./logger";
